@@ -28,18 +28,21 @@
 #define ICMP_BURST 10000U
 
 #define SMALL_PAYLOAD_BYTES 128
-#define DSCP_MASK 0xfc      /* upper 6 bits */
-#define DSCP_EF 0xb8        /* 46 << 2 */
-#define DSCP_AF41 0x88      /* 34 << 2 */
-#define DSCP_CS5 0xa0       /* 40 << 2 */
+#define DSCP_MASK 0xfc /* upper 6 bits */
+#define DSCP_EF 0xb8 /* 46 << 2 */
+#define DSCP_AF41 0x88 /* 34 << 2 */
+#define DSCP_CS5 0xa0 /* 40 << 2 */
 
 /* —— Static blocklist —— */
 #define BLOCK_START_IP 0x59F8A300U /* 89.248.163.0 */
-#define BLOCK_END_IP   0x59F8A5FFU /* 89.248.165.255 */
+#define BLOCK_END_IP 0x59F8A5FFU /* 89.248.165.255 */
 
 /* —— Headers —— */
-struct ethhdr { __u8 dst[6], src[6]; __be16 proto; };
-struct iphdr  {
+struct ethhdr {
+	__u8 dst[6], src[6];
+	__be16 proto;
+};
+struct iphdr {
 #if defined(__BIG_ENDIAN_BITFIELD)
 	__u8 version : 4, ihl : 4;
 #else
@@ -56,14 +59,19 @@ struct tcphdr {
 	__be16 source, dest;
 	__be32 seq, ack_seq;
 #if defined(__BIG_ENDIAN_BITFIELD)
-	__u16 doff:4, res1:4, cwr:1, ece:1, urg:1, ack:1, psh:1, rst:1, syn:1, fin:1;
+	__u16 doff : 4, res1 : 4, cwr : 1, ece : 1, urg : 1, ack : 1, psh : 1, rst : 1, syn : 1, fin : 1;
 #else
-	__u16 res1:4, doff:4, fin:1, syn:1, rst:1, psh:1, ack:1, urg:1, ece:1, cwr:1;
+	__u16 res1 : 4, doff : 4, fin : 1, syn : 1, rst : 1, psh : 1, ack : 1, urg : 1, ece : 1, cwr : 1;
 #endif
 	__be16 window, check, urg_ptr;
 };
-struct udphdr { __be16 source, dest, len, check; };
-struct icmphdr { __u8 type, code; __be16 checksum; };
+struct udphdr {
+	__be16 source, dest, len, check;
+};
+struct icmphdr {
+	__u8 type, code;
+	__be16 checksum;
+};
 
 /* —— Maps —— */
 struct {
@@ -82,7 +90,9 @@ struct {
 
 struct ip_data {
 	__u64 blacklist_time;
-	struct { __u64 tokens, last_ns; } syn, udp, icmp;
+	struct {
+		__u64 tokens, last_ns;
+	} syn, udp, icmp;
 	__u64 scan_distinct, scan_last_decay;
 };
 struct {
@@ -92,8 +102,13 @@ struct {
 	__type(value, struct ip_data);
 } ip_data_map SEC(".maps");
 
-struct scan_key { __u32 ip; __u16 port; };
-struct scan_val { __u64 last_ns; };
+struct scan_key {
+	__u32 ip;
+	__u16 port;
+};
+struct scan_val {
+	__u64 last_ns;
+};
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, 8192);
@@ -105,13 +120,15 @@ struct {
 static __always_inline void increment_stat(__u32 idx)
 {
 	__u64 *v = bpf_map_lookup_elem(&stats_map, &idx);
-	if (v) __sync_fetch_and_add(v, 1);
+	if (v)
+		__sync_fetch_and_add(v, 1);
 }
 
 static __always_inline void *parse_ethhdr(void *data, void *end, __be16 *ptype)
 {
 	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > end) return NULL;
+	if ((void *)(eth + 1) > end)
+		return NULL;
 	*ptype = eth->proto;
 	return eth + 1;
 }
@@ -137,7 +154,10 @@ static __always_inline __u8 token_bucket_ok(__u64 *tokens, __u64 *last_ns, const
 			*last_ns = now;
 		}
 	}
-	if (*tokens) { (*tokens)--; return 1; }
+	if (*tokens) {
+		(*tokens)--;
+		return 1;
+	}
 	return 0;
 }
 
@@ -146,45 +166,54 @@ SEC("xdp")
 int xdp_ddos(struct xdp_md *ctx)
 {
 	void *data = (void *)(long)ctx->data;
-	void *end  = (void *)(long)ctx->data_end;
+	void *end = (void *)(long)ctx->data_end;
 	__be16 eth_proto;
 	__u64 now = bpf_ktime_get_ns();
 
 	void *ptr = parse_ethhdr(data, end, &eth_proto);
-	if (!ptr || eth_proto != htons(ETH_P_IP)) goto PASS;
+	if (!ptr || eth_proto != htons(ETH_P_IP))
+		goto PASS;
 
 	struct iphdr *iph = ptr;
-	if ((void *)(iph + 1) > end) goto PASS;
+	if ((void *)(iph + 1) > end)
+		goto PASS;
 	__u8 ihl = iph->ihl * 4;
-	if ((void *)iph + ihl > end) goto PASS;
+	if ((void *)iph + ihl > end)
+		goto PASS;
 
 	/* hard block */
 	__u32 src = iph->saddr;
 	__u32 src_host = ntohl(src);
-	if (src_host >= BLOCK_START_IP && src_host <= BLOCK_END_IP) goto DROP;
+	if (src_host >= BLOCK_START_IP && src_host <= BLOCK_END_IP)
+		goto DROP;
 
 	/* QoS bypass */
-	if ((iph->tos & DSCP_MASK) == DSCP_EF ||
-	    (iph->tos & DSCP_MASK) == DSCP_AF41 ||
+	if ((iph->tos & DSCP_MASK) == DSCP_EF || (iph->tos & DSCP_MASK) == DSCP_AF41 ||
 	    (iph->tos & DSCP_MASK) == DSCP_CS5)
 		goto PASS;
 
 	void *l4 = (void *)iph + ihl;
-	if (l4 > end) goto PASS;
+	if (l4 > end)
+		goto PASS;
 	__u16 total = ntohs(iph->tot_len);
 	__u16 payload = (total > ihl) ? total - ihl : 0;
 
 	switch (iph->protocol) {
 	case IPPROTO_UDP: {
 		struct udphdr *u = l4;
-		if ((void *)(u + 1) > end) break;
+		if ((void *)(u + 1) > end)
+			break;
 		__u16 dport = ntohs(u->dest);
-		if (payload > SMALL_PAYLOAD_BYTES) goto PASS;
-		if (bpf_map_lookup_elem(&allow_ports, &dport)) goto PASS;
+		if (payload > SMALL_PAYLOAD_BYTES)
+			goto PASS;
+		if (bpf_map_lookup_elem(&allow_ports, &dport))
+			goto PASS;
 
 		struct ip_data *st = get_ip_data(src);
-		if (!st) break;
-		if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL) goto DROP;
+		if (!st)
+			break;
+		if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL)
+			goto DROP;
 
 		if (!token_bucket_ok(&st->udp.tokens, &st->udp.last_ns, UDP_RATE_PPS, UDP_BURST)) {
 			/* require two strikes inside 5 s before blacklisting */
@@ -199,12 +228,16 @@ int xdp_ddos(struct xdp_md *ctx)
 	}
 	case IPPROTO_ICMP: {
 		struct icmphdr *ic = l4;
-		if ((void *)(ic + 1) > end) break;
-		if (payload > SMALL_PAYLOAD_BYTES) goto PASS;
+		if ((void *)(ic + 1) > end)
+			break;
+		if (payload > SMALL_PAYLOAD_BYTES)
+			goto PASS;
 
 		struct ip_data *st = get_ip_data(src);
-		if (!st) break;
-		if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL) goto DROP;
+		if (!st)
+			break;
+		if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL)
+			goto DROP;
 
 		if (!token_bucket_ok(&st->icmp.tokens, &st->icmp.last_ns, ICMP_RATE_PPS, ICMP_BURST)) {
 			if (now - st->blacklist_time < 5000000000ULL) {
@@ -218,18 +251,27 @@ int xdp_ddos(struct xdp_md *ctx)
 	}
 	case IPPROTO_TCP: {
 		struct tcphdr *t = l4;
-		if ((void *)(t + 1) > end) break;
+		if ((void *)(t + 1) > end)
+			break;
 		if (t->syn && !t->ack) {
 			struct ip_data *st = get_ip_data(src);
-			if (!st) break;
-			if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL) goto DROP;
+			if (!st)
+				break;
+			if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL)
+				goto DROP;
 
-			if (now - st->syn.last_ns > DECAY_INTERVAL_NS) st->syn.tokens = 0;
-			st->syn.tokens++; st->syn.last_ns = now;
-			if (st->syn.tokens > SYN_THRESHOLD) { st->blacklist_time = now; goto DROP; }
+			if (now - st->syn.last_ns > DECAY_INTERVAL_NS)
+				st->syn.tokens = 0;
+			st->syn.tokens++;
+			st->syn.last_ns = now;
+			if (st->syn.tokens > SYN_THRESHOLD) {
+				st->blacklist_time = now;
+				goto DROP;
+			}
 
 			if (now - st->scan_last_decay > 2000000000ULL) {
-				st->scan_distinct = 0; st->scan_last_decay = now;
+				st->scan_distinct = 0;
+				st->scan_last_decay = now;
 			}
 			struct scan_key key = { src, ntohs(t->dest) };
 			struct scan_val *v = bpf_map_lookup_elem(&portscan_map, &key);
@@ -237,16 +279,25 @@ int xdp_ddos(struct xdp_md *ctx)
 				struct scan_val nv = { .last_ns = now };
 				bpf_map_update_elem(&portscan_map, &key, &nv, BPF_ANY);
 				st->scan_distinct++;
-				if (st->scan_distinct > 20ULL) { st->blacklist_time = now; goto DROP; }
-			} else v->last_ns = now;
+				if (st->scan_distinct > 20ULL) {
+					st->blacklist_time = now;
+					goto DROP;
+				}
+			} else
+				v->last_ns = now;
 		}
 		break;
 	}
-	default: goto PASS;
+	default:
+		goto PASS;
 	}
 
-PASS: increment_stat(0); return XDP_PASS;
-DROP: increment_stat(1); return XDP_DROP;
+PASS:
+	increment_stat(0);
+	return XDP_PASS;
+DROP:
+	increment_stat(1);
+	return XDP_DROP;
 }
 
 char _license[] SEC("license") = "GPL";
