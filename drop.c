@@ -1,3 +1,7 @@
+/* XDP program for permanent IP blocking using LPM_TRIE.
+
+ */
+
 #define KBUILD_MODNAME "xdp_prog"
 
 #include <linux/bpf.h>
@@ -33,7 +37,7 @@ struct iphdr {
 };
 
 /* —— Maps —— */
-// Stats map for tracking passed and dropped packets (optional but useful for monitoring)
+/* Stats map for tracking passed (idx=0) and dropped (idx=1) packets—useful for monitoring and debugging. */
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 2);
@@ -41,22 +45,20 @@ struct {
 	__type(value, __u64);
 } stats_map SEC(".maps");
 
-// LPM trie map for blocked IP addresses and ranges.
-// Use prefixlen=32 for individual IPs, lower for ranges (e.g., /24).
-// Populate this map from userspace with tools like bpftool.
-// This allows permanent blocking without timeouts.
-// Monetization idea: Package this as part of a subscription-based firewall service
-// where users pay for managed blocklists updated via API, integrated into cloud security products.
+/* LPM trie map for blocked IP addresses and ranges.
+ * Key: prefixlen (up to 32) + IP data in network byte order (__be32 equivalent).
+ * Use prefixlen=32 for individual IPs, lower for CIDR ranges (e.g., /24).
+ */
 struct {
 	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
-	__uint(max_entries, 1024); // Adjust based on needs; can be larger since custom distro allows full control.
+	__uint(max_entries, 65536); /* Increased for production scale; efficient trie handles it. */
 	__uint(map_flags, BPF_F_NO_PREALLOC);
 	__type(
 		key, struct {
 			__u32 prefixlen;
-			__u8 data[4];
+			__u32 data; /* IP address in network byte order. */
 		});
-	__type(value, __u8); // Dummy value; presence indicates block.
+	__type(value, __u8); /* Dummy value; presence indicates block. */
 } blocked_ips SEC(".maps");
 
 /* —— Helpers —— */
@@ -95,14 +97,13 @@ int xdp_block_ips(struct xdp_md *ctx)
 	if ((void *)iph + ihl > end)
 		goto PASS;
 
-	// Prepare LPM key for source IP lookup (network byte order)
+	/* Prepare LPM key for source IP lookup: full /32 prefix for LPM matching. */
 	struct {
 		__u32 prefixlen;
-		__u8 data[4];
-	} key = { .prefixlen = 32 };
-	__builtin_memcpy(key.data, &iph->saddr, 4);
+		__u32 data;
+	} key = { .prefixlen = 32, .data = iph->saddr }; /* saddr already in network order. */
 
-	// Lookup in blocked_ips map
+	/* Lookup: If any matching prefix (longest first), drop the packet. */
 	__u8 *val = bpf_map_lookup_elem(&blocked_ips, &key);
 	if (val)
 		goto DROP;

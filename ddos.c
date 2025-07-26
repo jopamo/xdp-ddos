@@ -17,25 +17,21 @@
 #define htonl(x) bpf_htonl(x)
 
 /* —— Tunables —— */
-#define DECAY_INTERVAL_NS 1000000000ULL
-#define BLACKLIST_DURATION_S 60ULL
+/* High thresholds to minimize false positives on routers handling legitimate high-volume traffic. */
+/* SYN rate: Allow up to 100k SYN/s per IP with burst of 10k—adjust higher if needed for no FP. */
+#define SYN_RATE_PPS 100000U
+#define SYN_BURST 10000U
 
-#define SYN_THRESHOLD 100000ULL
-
+/* UDP rate: For small payloads to non-allowed ports; 200k PPS/burst 20k. */
 #define UDP_RATE_PPS 200000U
 #define UDP_BURST 20000U
+
+/* ICMP rate: For small payloads; 100k PPS/burst 10k. */
 #define ICMP_RATE_PPS 100000U
 #define ICMP_BURST 10000U
 
+/* Small payload threshold to target flood attacks without affecting legit larger packets. */
 #define SMALL_PAYLOAD_BYTES 128
-#define DSCP_MASK 0xfc /* upper 6 bits */
-#define DSCP_EF 0xb8 /* 46 << 2 */
-#define DSCP_AF41 0x88 /* 34 << 2 */
-#define DSCP_CS5 0xa0 /* 40 << 2 */
-
-/* —— Static blocklist —— */
-#define BLOCK_START_IP 0x59F8A300U /* 89.248.163.0 */
-#define BLOCK_END_IP 0x59F8A5FFU /* 89.248.165.255 */
 
 /* —— Headers —— */
 struct ethhdr {
@@ -74,6 +70,7 @@ struct icmphdr {
 };
 
 /* —— Maps —— */
+/* Stats map: Track passed (0) and dropped (1) packets for monitoring—low overhead percpu array. */
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 2);
@@ -81,6 +78,7 @@ struct {
 	__type(value, __u64);
 } stats_map SEC(".maps");
 
+/* Allowed UDP ports: Small hash map to bypass rate limiting for known good ports (e.g., DNS=53)—populate from userspace to avoid FP. */
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 32);
@@ -88,33 +86,18 @@ struct {
 	__type(value, __u8);
 } allow_ports SEC(".maps");
 
+/* Per-IP data: Token buckets for SYN, UDP, ICMP—hash map with limited entries for low memory/CPU. No blacklisting to prevent FP; just drop excess. */
 struct ip_data {
-	__u64 blacklist_time;
 	struct {
 		__u64 tokens, last_ns;
 	} syn, udp, icmp;
-	__u64 scan_distinct, scan_last_decay;
 };
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, 4096);
-	__type(key, __u32);
+	__uint(max_entries, 4096); /* Small size to evict inactive; low overhead. */
+	__type(key, __u32); /* Source IP. */
 	__type(value, struct ip_data);
 } ip_data_map SEC(".maps");
-
-struct scan_key {
-	__u32 ip;
-	__u16 port;
-};
-struct scan_val {
-	__u64 last_ns;
-};
-struct {
-	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, 8192);
-	__type(key, struct scan_key);
-	__type(value, struct scan_val);
-} portscan_map SEC(".maps");
 
 /* —— Helpers —— */
 static __always_inline void increment_stat(__u32 idx)
@@ -138,8 +121,8 @@ static __always_inline struct ip_data *get_ip_data(__u32 src)
 	struct ip_data *st = bpf_map_lookup_elem(&ip_data_map, &src);
 	if (!st) {
 		struct ip_data zero = {};
-		bpf_map_update_elem(&ip_data_map, &src, &zero, BPF_NOEXIST);
-		st = bpf_map_lookup_elem(&ip_data_map, &src);
+		if (bpf_map_update_elem(&ip_data_map, &src, &zero, BPF_NOEXIST) == 0)
+			st = bpf_map_lookup_elem(&ip_data_map, &src);
 	}
 	return st;
 }
@@ -168,7 +151,6 @@ int xdp_ddos(struct xdp_md *ctx)
 	void *data = (void *)(long)ctx->data;
 	void *end = (void *)(long)ctx->data_end;
 	__be16 eth_proto;
-	__u64 now = bpf_ktime_get_ns();
 
 	void *ptr = parse_ethhdr(data, end, &eth_proto);
 	if (!ptr || eth_proto != htons(ETH_P_IP))
@@ -181,16 +163,7 @@ int xdp_ddos(struct xdp_md *ctx)
 	if ((void *)iph + ihl > end)
 		goto PASS;
 
-	/* hard block */
-	__u32 src = iph->saddr;
-	__u32 src_host = ntohl(src);
-	if (src_host >= BLOCK_START_IP && src_host <= BLOCK_END_IP)
-		goto DROP;
-
-	/* QoS bypass */
-	if ((iph->tos & DSCP_MASK) == DSCP_EF || (iph->tos & DSCP_MASK) == DSCP_AF41 ||
-	    (iph->tos & DSCP_MASK) == DSCP_CS5)
-		goto PASS;
+	__u32 src = iph->saddr; /* Network order for map key. */
 
 	void *l4 = (void *)iph + ihl;
 	if (l4 > end)
@@ -198,93 +171,41 @@ int xdp_ddos(struct xdp_md *ctx)
 	__u16 total = ntohs(iph->tot_len);
 	__u16 payload = (total > ihl) ? total - ihl : 0;
 
+	struct ip_data *st = get_ip_data(src);
+	if (!st)
+		goto PASS; /* Fail-safe: Pass if map issue. */
+
 	switch (iph->protocol) {
 	case IPPROTO_UDP: {
 		struct udphdr *u = l4;
 		if ((void *)(u + 1) > end)
-			break;
+			goto PASS;
 		__u16 dport = ntohs(u->dest);
-		if (payload > SMALL_PAYLOAD_BYTES)
-			goto PASS;
-		if (bpf_map_lookup_elem(&allow_ports, &dport))
-			goto PASS;
+		if (payload > SMALL_PAYLOAD_BYTES || bpf_map_lookup_elem(&allow_ports, &dport))
+			goto PASS; /* Bypass for large or allowed. */
 
-		struct ip_data *st = get_ip_data(src);
-		if (!st)
-			break;
-		if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL)
+		if (!token_bucket_ok(&st->udp.tokens, &st->udp.last_ns, UDP_RATE_PPS, UDP_BURST))
 			goto DROP;
-
-		if (!token_bucket_ok(&st->udp.tokens, &st->udp.last_ns, UDP_RATE_PPS, UDP_BURST)) {
-			/* require two strikes inside 5 s before blacklisting */
-			if (now - st->blacklist_time < 5000000000ULL) {
-				st->blacklist_time = now;
-				goto DROP;
-			}
-			st->blacklist_time = now;
-			goto PASS;
-		}
 		break;
 	}
 	case IPPROTO_ICMP: {
 		struct icmphdr *ic = l4;
 		if ((void *)(ic + 1) > end)
-			break;
+			goto PASS;
 		if (payload > SMALL_PAYLOAD_BYTES)
 			goto PASS;
 
-		struct ip_data *st = get_ip_data(src);
-		if (!st)
-			break;
-		if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL)
+		if (!token_bucket_ok(&st->icmp.tokens, &st->icmp.last_ns, ICMP_RATE_PPS, ICMP_BURST))
 			goto DROP;
-
-		if (!token_bucket_ok(&st->icmp.tokens, &st->icmp.last_ns, ICMP_RATE_PPS, ICMP_BURST)) {
-			if (now - st->blacklist_time < 5000000000ULL) {
-				st->blacklist_time = now;
-				goto DROP;
-			}
-			st->blacklist_time = now;
-			goto PASS;
-		}
 		break;
 	}
 	case IPPROTO_TCP: {
 		struct tcphdr *t = l4;
 		if ((void *)(t + 1) > end)
-			break;
+			goto PASS;
 		if (t->syn && !t->ack) {
-			struct ip_data *st = get_ip_data(src);
-			if (!st)
-				break;
-			if (now - st->blacklist_time < BLACKLIST_DURATION_S * 1000000000ULL)
+			if (!token_bucket_ok(&st->syn.tokens, &st->syn.last_ns, SYN_RATE_PPS, SYN_BURST))
 				goto DROP;
-
-			if (now - st->syn.last_ns > DECAY_INTERVAL_NS)
-				st->syn.tokens = 0;
-			st->syn.tokens++;
-			st->syn.last_ns = now;
-			if (st->syn.tokens > SYN_THRESHOLD) {
-				st->blacklist_time = now;
-				goto DROP;
-			}
-
-			if (now - st->scan_last_decay > 2000000000ULL) {
-				st->scan_distinct = 0;
-				st->scan_last_decay = now;
-			}
-			struct scan_key key = { src, ntohs(t->dest) };
-			struct scan_val *v = bpf_map_lookup_elem(&portscan_map, &key);
-			if (!v) {
-				struct scan_val nv = { .last_ns = now };
-				bpf_map_update_elem(&portscan_map, &key, &nv, BPF_ANY);
-				st->scan_distinct++;
-				if (st->scan_distinct > 20ULL) {
-					st->blacklist_time = now;
-					goto DROP;
-				}
-			} else
-				v->last_ns = now;
 		}
 		break;
 	}
