@@ -153,7 +153,8 @@ int xdp_block_ips(struct xdp_md *ctx)
 	if ((src_host >= 0x59F8A300U && src_host <= 0x59F8A5FFU) ||
 	    (src_host >= 0x53DEBE00U && src_host <= 0x53DEBFFFU) ||
 	    (src_host >= 0xB0419400U && src_host <= 0xB04194FFU) ||
-	    (src_host >= 0x67D2F400U && src_host <= 0x67D2F5FFU))
+	    (src_host >= 0x67D2F400U && src_host <= 0x67D2F5FFU) ||
+	    (src_host >= 0x771C0000U && src_host <= 0x771DFFFFU))
 		goto DROP;
 
 	void *l4 = (void *)iph + ihl;
