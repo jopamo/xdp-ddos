@@ -31,30 +31,44 @@ struct range {
 };
 
 static const struct range blocked_ranges[] = {
-	{ 0x59F8A300U, 0x59F8A5FFU }, /* 89.248.163.0 - 89.248.165.255 */
-	{ 0x53DEBE00U, 0x53DEBFFFU }, /* 83.222.190.0 - 83.222.191.255 (Net_4Media, BG) */
-	{ 0xB0419400U, 0xB04194FFU }, /* 176.65.148.0 - 176.65.148.255 */
-	{ 0x67D2F400U, 0x67D2F5FFU }, /* 103.210.244.0 - 103.210.245.255 */
-	{ 0x771C0000U, 0x771DFFFFU }, /* 119.28.0.0 - 119.29.255.255 */
-	{ 0xA75E8A00U, 0xA75E8AFFU }, /* 167.94.138.0 - 167.94.138.255 */
-	{ 0xC12EFF00U, 0xC12EFFFFU }, /* 193.46.255.0 - 193.46.255.255 (UNMANAGED-LTD, GB) */
-	{ 0x23C00000U, 0x23CFFFFFU }, /* 35.192.0.0 - 35.207.255.255 */
 	{ 0x12200000U, 0x12FFFFFFU }, /* 18.32.0.0 - 18.255.255.255 */
+	{ 0x23C00000U, 0x23CFFFFFU }, /* 35.192.0.0 - 35.207.255.255 */
 	{ 0x4F7C3E00U, 0x4F7C3EFFU }, /* 79.124.62.0 - 79.124.62.255 (CLOUDVPS-NET, EU) */
-	{ 0xA2D89400U, 0xA2D897FFU }, /* 162.216.148.0 - 162.216.151.255 (Google Cloud) */
-	{ 0x73E74E00U, 0x73E74E7FU }, /* 115.231.78.0 - 115.231.78.127 (Hangzhou Duchuang Keji Co.,Ltd, China) */
-	{ 0xC4FB4600U, 0xC4FB46FFU }, /* 196.251.70.0 - 196.251.70.255 (internet-security-cheapyhost, Seychelles) */
+	{ 0x505E5F00U, 0x505E5FFFU }, /* 80.94.95.0 - 80.94.95.255 (UNMANAGED-LTD, GB) */
+	{ 0x53DEBE00U, 0x53DEBFFFU }, /* 83.222.190.0 - 83.222.191.255 (Net_4Media, BG) */
+	{ 0x59F8A300U, 0x59F8A5FFU }, /* 89.248.163.0 - 89.248.165.255 */
 	{ 0x5C762700U, 0x5C7627FFU }, /* 92.118.39.0 - 92.118.39.255 (DMZHOST, Netherlands) */
+	{ 0x67D2F400U, 0x67D2F5FFU }, /* 103.210.244.0 - 103.210.245.255 */
+	{ 0x68EA0000U, 0x68EAFFFFU }, /* 104.234.0.0 - 104.234.255.255 (Velcom, CA) */
+	{ 0x73E74E00U, 0x73E74E7FU }, /* 115.231.78.0 - 115.231.78.127 (Hangzhou Duchuang Keji Co.,Ltd, China) */
+	{ 0x771C0000U, 0x771DFFFFU }, /* 119.28.0.0 - 119.29.255.255 (IRT-TencentCloud-CN)*/
+	{ 0x95320000U, 0x9532FFFFU }, /* 149.50.0.0 - 149.50.255.255 (COGENT-149-50-16, PSI-1) */
+	{ 0xA2D89400U, 0xA2D897FFU }, /* 162.216.148.0 - 162.216.151.255 (Google Cloud) */
+	{ 0xA75E8A00U, 0xA75E8AFFU }, /* 167.94.138.0 - 167.94.138.255 (Censys, Inc.)*/
+	{ 0xB0419400U, 0xB04194FFU }, /* 176.65.148.0 - 176.65.148.255 (Pfcloud UG DE)*/
+	{ 0xB95B7F00U, 0xB95B7F7FU }, /* 185.91.127.0 - 185.91.127.127 (TUBE-VPS, DE) */
 	{ 0xB9DA5400U, 0xB9DA54FFU }, /* 185.218.84.0 - 185.218.84.255 (UK-NETIFACE-20250320, GB) */
+	{ 0xC12EFF00U, 0xC12EFFFFU }, /* 193.46.255.0 - 193.46.255.255 (UNMANAGED-LTD, GB) */
+	{ 0xC1A37D00U, 0xC1A37D7FU }, /* 193.163.125.0 - 193.163.125.127 (DRIFTNET-IPV4-A, GB) */
 	{ 0xC2B43000U, 0xC2B430FFU }, /* 194.180.48.0 - 194.180.48.255 (Dedicated Servers IP Range, DE) */
 	{ 0xC2B43100U, 0xC2B431FFU }, /* 194.180.49.0 - 194.180.49.255 (Dedicated Servers IP Range, DE) */
+	{ 0xC4FB4600U, 0xC4FB46FFU }, /* 196.251.70.0 - 196.251.70.255 (internet-security-cheapyhost, Seychelles) */
 	{ 0xC4FB5800U, 0xC4FB58FFU }, /* 196.251.88.0 - 196.251.88.255 (internet-security-cheapyhost, SC) */
-	{ 0x68EA7369U, 0x68EA7369U }, /* 104.234.115.105 (Deepfield crawler, CA) */
-	{ 0x95326072U, 0x95326072U }, /* 149.50.96.114 (MEVSPACE, PL) */
-	{ 0xB95B7F6BU, 0xB95B7F6BU }, /* 185.91.127.107 (Tube-Hosting, DE) */
-	{ 0xC1A37D64U, 0xC1A37D64U }, /* 193.163.125.100 (Driftnet Ltd, GB) */
-	{ 0xCC4CCBDCU, 0xCC4CCBDCU }, /* 204.76.203.220 (Pfcloud UG, NL) */
-	{ 0x505E5FE2U, 0x505E5FE2U }, /* 80.94.95.226 (UNMANAGED LTD, GB) */
+	{ 0xCC4CCB00U, 0xCC4CCBFFU }, /* 204.76.203.0 - 204.76.203.255 (INTEL-NET1-25, NL) */
+	{ 0x00000000U, 0x00FFFFFFU }, /* bogon: 0.0.0.0/8 */
+	{ 0x0A000000U, 0x0AFFFFFFU }, /* bogon: 10.0.0.0/8 (private) */
+	{ 0x64400000U, 0x6443FFFFU }, /* bogon: 100.64.0.0/10 (CGNAT) */
+	{ 0x7F000000U, 0x7FFFFFFFU }, /* bogon: 127.0.0.0/8 (loopback) */
+	{ 0xA9FE0000U, 0xA9FEFFFFU }, /* bogon: 169.254.0.0/16 (link-local) */
+	{ 0xAC100000U, 0xAC1FFFFFU }, /* bogon: 172.16.0.0/12 (private) */
+	{ 0xC0000000U, 0xC00000FFU }, /* bogon: 192.0.0.0/24 (reserved) */
+	{ 0xC0000200U, 0xC00002FFU }, /* bogon: 192.0.2.0/24 (TEST-NET-1) */
+	{ 0xC0A80000U, 0xC0A8FFFFU }, /* bogon: 192.168.0.0/16 (private) */
+	{ 0xC6120000U, 0xC613FFFFU }, /* bogon: 198.18.0.0/15 (benchmarking) */
+	{ 0xC6336400U, 0xC63364FFU }, /* bogon: 198.51.100.0/24 (TEST-NET-2) */
+	{ 0xCB007100U, 0xCB0071FFU }, /* bogon: 203.0.113.0/24 (TEST-NET-3) */
+	{ 0xE0000000U, 0xEFFFFFFFU }, /* bogon: 224.0.0.0/4 (multicast) */
+	{ 0xF0000000U, 0xFFFFFFFFU }, /* bogon: 240.0.0.0/4 (reserved, including 255.255.255.255/32 broadcast) */
 };
 
 struct ethhdr {
