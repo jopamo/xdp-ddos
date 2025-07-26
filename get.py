@@ -117,8 +117,8 @@ else:
 parsed_json = json.dumps(parsed_logs, indent=2)
 
 # Print results
-print("Parsed Logs (JSON):")
-print(parsed_json)
+#print("Parsed Logs (JSON):")
+#print(parsed_json)
 
 print("\nBlocked IP Range Report (Sorted by Total Attempts Descending):")
 for rng, ips in sorted_ranges:
