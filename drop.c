@@ -25,6 +25,18 @@
 
 #define SMALL_PAYLOAD_BYTES 128
 
+struct range {
+	__u32 start;
+	__u32 end;
+};
+
+static const struct range blocked_ranges[] = {
+	{ 0x59F8A300U, 0x59F8A5FFU }, { 0x53DEBE00U, 0x53DEBFFFU }, { 0xB0419400U, 0xB04194FFU },
+	{ 0x67D2F400U, 0x67D2F5FFU }, { 0x771C0000U, 0x771DFFFFU }, { 0xA75E8A00U, 0xA75E8AFFU },
+	{ 0xC12EFF00U, 0xC12EFFFFU }, { 0x23C00000U, 0x23CFFFFFU }, { 0x12200000U, 0x12FFFFFFU },
+	{ 0x4F7C3E00U, 0x4F7C3EFFU },
+};
+
 struct ethhdr {
 	__u8 dst[6], src[6];
 	__be16 proto;
@@ -150,12 +162,11 @@ int xdp_block_ips(struct xdp_md *ctx)
 
 	__u32 src = iph->saddr;
 	__u32 src_host = ntohl(src);
-	if ((src_host >= 0x59F8A300U && src_host <= 0x59F8A5FFU) ||
-	    (src_host >= 0x53DEBE00U && src_host <= 0x53DEBFFFU) ||
-	    (src_host >= 0xB0419400U && src_host <= 0xB04194FFU) ||
-	    (src_host >= 0x67D2F400U && src_host <= 0x67D2F5FFU) ||
-	    (src_host >= 0x771C0000U && src_host <= 0x771DFFFFU))
-		goto DROP;
+
+	for (int i = 0; i < sizeof(blocked_ranges) / sizeof(blocked_ranges[0]); i++) {
+		if (src_host >= blocked_ranges[i].start && src_host <= blocked_ranges[i].end)
+			goto DROP;
+	}
 
 	void *l4 = (void *)iph + ihl;
 	if (l4 > end)
