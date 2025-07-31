@@ -8,12 +8,12 @@
 #include <linux/if_ether.h>
 #include <linux/ip.h>
 
+/* ---- static IPv4 ranges (network-order) --------------------------- */
 struct range_be {
-	__be32 start;
-	__be32 end;
+	__be32 start, end;
 };
 
-static const struct range_be blocked_ranges[] = {
+static const volatile struct range_be blocked[] = {
 	{ 0x2D8EC100, 0x2D8EC1FF }, /* 45.142.193.0/24   */
 	{ 0x2DC24200, 0x2DC242FF }, /* 45.194.66.0/24    */
 	{ 0x2F4A0000, 0x2F57FFFF }, /* 47.74.0.0-47.87   */
@@ -54,17 +54,18 @@ static const struct range_be blocked_ranges[] = {
 	{ 0xDDE00000, 0xDDE7FFFF }, /* 221.224/13        */
 };
 
-#define RANGES (sizeof(blocked_ranges) / sizeof(blocked_ranges[0]))
+#define RANGES (sizeof(blocked) / sizeof(blocked[0]))
 
-static __always_inline bool ip_blocked(__be32 saddr_be)
+static __always_inline bool ip_blocked(__be32 addr_be)
 {
-#pragma unroll
+	/* kernel ≥5.3 supports bounded loops – no need for unrolling */ /* :contentReference[oaicite:6]{index=6} */
 	for (int i = 0; i < RANGES; i++)
-		if (saddr_be >= blocked_ranges[i].start && saddr_be <= blocked_ranges[i].end)
+		if (addr_be >= blocked[i].start && addr_be <= blocked[i].end)
 			return true;
 	return false;
 }
 
+/* ---- XDP program --------------------------------------------------- */
 SEC("xdp")
 int xdp_block_ips(struct xdp_md *ctx)
 {

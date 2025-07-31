@@ -1,4 +1,4 @@
-CC = gcc
+CC = clang
 BPF_CC = clang
 
 CFLAGS = -O3 -Wall -Werror
